@@ -1,0 +1,284 @@
+---
+title: "DATA621 Final Project"
+author: "IvanTikhonov, Seung min song, Alice Friedman, Anthony A"
+date: "2023-03-08"
+output: html_document
+---
+
+Research question Objective
+The primary objective of this study is to investigate the external factors that have an impact on students’
+final grades. It should be noted that the data used in this study was obtained through a survey of students
+enrolled in math and Portuguese language courses at the secondary school level. In order to accomplish
+this, an exhaustive analysis of several external variables will be conducted, with a particular emphasis on
+students’ health, social and demographic factors, study habits, and other relevant factors. The variables
+under consideration are independent variables, and the data set being used for the analysis is quantitative in
+nature. By examining these external factors, this study aims to gain a deeper understanding of how various
+aspects of students’ lives can affect their academic performance, and to provide insights that can be used to
+improve educational outcomes. It is hoped that the results of this investigation will help to inform future
+efforts to support students’ academic success and enhance their overall educational experience.
+
+
+
+Data Source
+Downloaded the csv data table from the link below:
+• kaggle.com/datasets/uciml/student-alcohol-consumption
+
+
+
+```{r}
+set.seed(123)
+
+mat_df <- data.frame(matrix(ncol = 3, nrow = 0) ,stringsAsFactors = FALSE)
+por_df <- data.frame(matrix(ncol = 3, nrow = 0) ,stringsAsFactors = FALSE)
+```
+
+Required Libraries
+```{r}
+library(corrplot)
+library(onehot)
+library(pheatmap)
+library(RColorBrewer)
+library(rolog)
+library(tidyr)
+library(MASS)
+library(class)
+library(Matrix)
+library(rpart)
+library(knitr)
+library(ISLR)
+library(GGally)
+library(ggmap)
+library(ggplot2)
+library(gargle)
+library(ggthemes)
+library(gargle)
+library(dbplyr)
+library(dplyr)
+library(caTools)
+library(forecast)
+library(quantmod)
+library(data.table)
+library(xts)
+library(zoo)
+library(base)
+library(TTR)
+library(Metrics)
+library(caret)
+```
+
+
+
+1. Data Exploration
+
+```{r}
+mat <- read.csv("https://raw.githubusercontent.com/IvanGrozny88/DATA621-Final-Project/main/student-mat.csv")
+
+por <- read.csv("https://raw.githubusercontent.com/IvanGrozny88/DATA621-Final-Project/main/student-por.csv")
+summary(mat)
+```
+```{r}
+summary(por)
+```
+```{r}
+#mat <- as.data.frame(mat)
+mat_new <- mat %>% gather(key = 'key', value = 'value')
+mat_new %>% gather() %>% ggplot(aes(x= value)) + geom_histogram(stat = "count") + facet_wrap(~key, scales = 'free', ncol=7)
+```
+```{r}
+#mat <- as.data.frame(mat)
+por_new <- por %>% gather(key = 'key', value = 'value')
+por_new %>% gather() %>% ggplot(aes(x= value)) + geom_histogram(stat = "count") + facet_wrap(~key, scales = 'free', ncol=7)
+```
+```{r}
+corrplot(cor(mat[,sapply(mat, is.numeric)], use = "complete.obs"), type="upper", diag = FALSE, col=brewer.pal(n=10, name="Paired"))
+```
+```{r}
+corrplot(cor(por[,sapply(por, is.numeric)], use = "complete.obs"), type="upper", diag = FALSE, col=brewer.pal(n=10, name="Paired"))
+```
+2. Data Preparation
+```{r}
+#encode math data
+mat_encoder <- onehot(mat, stringsAsFactors = TRUE)
+mat <- predict(mat_encoder, mat)
+remove <- c("school=GP", "sex=F", "address=U", "famsize=LE3", "Pstatus=T",
+                        "Mjob=at_home", "Fjob=at_home","reason=course", "guardian=other",
+                        "schoolsup=no", "famsup=no", "paid=no", "activities=no", "nursery=no",
+                        "higher=no", "internet=no", "romantic=no")
+mat <- mat[,!(colnames(mat) %in% remove)]
+
+#encode por data
+por_encoder <- onehot(por, stringsAsFactors = TRUE)
+por <- predict(por_encoder, por)
+por <- por[,!(colnames(por) %in% remove)]
+```
+```{r}
+head(mat)
+```
+```{r}
+head(por)
+```
+3. Build Models
+Split the datasets into train and test in the ration 80:20.
+
+```{r}
+#mat
+mat<-as.data.frame(mat)
+sample <- sample.split(mat, SplitRatio = 0.8)
+
+mat_train <- subset(mat,sample==TRUE)
+mat_test <- subset(mat,sample==FALSE)
+mat_final_test <- mat_test
+
+
+#por
+por<-as.data.frame(por)
+sample <- sample.split(por, SplitRatio = 0.8)
+
+por_train <- subset(por,sample==TRUE)
+por_test <- subset(por,sample==FALSE)
+por_final_test <- por_test
+```
+
+```{r}
+#row count of mat. train, test sets
+df_mat <- c(nrow(mat),nrow(mat_train),nrow(mat_test))
+df_mat
+```
+
+```{r}
+#row count of por. train, test sets
+df_por <- c(nrow(por),nrow(por_train),nrow(por_test))
+df_por
+```
+MODEL 1 Linear
+
+```{r}
+mat_stepAIC <- stepAIC(lm(G3~., mat_train), direction = "both", trace = FALSE)
+summary(mat_stepAIC)
+```
+```{r}
+mat_test$lm_G3 <- predict(mat_stepAIC, mat_test, type = "response")
+
+mat_rmse_lm <- RMSE(as.integer(mat_test$lm_G3), mat_test$G3)
+mat_r2_lm <- R2(mat_test$lm_G3, mat_test$G3)
+
+mat_df <- rbind(mat_df, c(' LM Model' ,round(mat_rmse_lm,3), round(mat_r2_lm,3)), stringsAsFactors = FALSE)
+```
+
+```{r}
+por_stepAIC <- stepAIC(lm(G3~., por_train), direction = "both", trace = FALSE)
+summary(por_stepAIC)
+```
+
+```{r}
+por_test$lm_G3 <- predict(por_stepAIC, por_test, type = "response")
+
+por_rmse_lm <- RMSE(as.integer(por_test$lm_G3), por_test$G3)
+por_r2_lm <- R2(por_test$lm_G3, por_test$G3)
+
+por_df <- rbind(por_df, c('LM Model', round(por_rmse_lm,3), round(por_r2_lm,3)), stringsAsFactors = FALSE)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(mat_stepAIC)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(por_stepAIC)
+```
+MODEL 2 - Gaussian
+
+```{r}
+mat_glm <- glm(G3~., mat_train, family = gaussian)
+mat_test$glm_G3 <- predict(mat_glm, newdata = mat_test)
+mat_glm <- stepAIC(mat_glm, direction = "both", trace = FALSE)
+summary(mat_glm)
+```
+```{r}
+mat_rmse_glm <- RMSE(as.integer(mat_test$glm_G3), mat_test$G3)
+mat_r2_glm <- R2(as.integer(mat_test$glm_G3), mat_test$G3)
+
+mat_df <- rbind(mat_df, c('GLM Model' ,round(mat_rmse_glm,3), round(mat_r2_glm,3)), stringsAsFactors = FALSE)
+```
+
+```{r}
+por_glm <- glm(G3~., por_train, family = gaussian)
+por_test$glm_G3 <- predict(por_glm, newdata = por_test)
+por_glm <- stepAIC(por_glm, direction = "both", trace = FALSE)
+summary(por_glm)
+```
+
+```{r}
+por_rmse_glm <-  RMSE(as.integer(por_test$glm_G3), por_test$G3)
+por_r2_glm <- R2(as.integer(por_test$glm_G3), por_test$G3)
+
+por_df <- rbind(por_df, c('GLM Model', round(por_rmse_glm,3), round(por_r2_glm,3)), stringsAsFactors = FALSE)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(mat_glm)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(por_glm)
+```
+MODEL 3 - Poisson
+
+```{r}
+mat_pois <- glm(G3~., mat_train, family = poisson)
+mat_test$glm_G3_pois <- predict(mat_pois, newdata = mat_test)
+mat_pois <- stepAIC(mat_pois, direction = "both", trace = FALSE)
+summary(mat_pois)
+```
+
+
+```{r}
+mat_rmse_glm <- RMSE(as.integer(mat_test$glm_G3_pois), mat_test$G3)
+mat_r2_glm <- R2(as.integer(mat_test$glm_G3_pois), mat_test$G3)
+
+mat_df <- rbind(mat_df, c('GLM - Poisson Model' ,round(mat_rmse_glm,3), round(mat_r2_glm,3)), stringsAsFactors = FALSE)
+```
+
+```{r}
+por_pois <- glm(G3~., por_train, family = poisson)
+por_test$glm_G3_pois <- predict(por_pois, newdata = por_test)
+por_pois <- stepAIC(por_pois, direction = "both", trace = FALSE)
+summary(por_pois)
+```
+```{r}
+por_rmse_glm <-  RMSE(as.integer(por_test$glm_G3_pois), por_test$G3)
+por_r2_glm <- R2(as.integer(por_test$glm_G3_pois), por_test$G3)
+
+por_df <- rbind(por_df, c('GLM - Poisson Model', round(por_rmse_glm,3), round(por_r2_glm,3)), stringsAsFactors = FALSE)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(mat_pois)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(por_pois)
+```
+```{r}
+x <- c("Model", "RMSE", "R2")
+
+colnames(mat_df) <- x
+mat_df
+```
+
+```{r}
+colnames(por_df) <- x
+por_df
+```
+
+
+
+
+
+
+
+
